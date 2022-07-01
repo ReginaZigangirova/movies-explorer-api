@@ -8,4 +8,5 @@ Back-end часть проекта Movies-Explorer на ExpressJS. Сервис 
 **npm run dev** — запускает сервер с hot-reload
 
 ## Ссылка на проект 
+[https://api.movies.regina.nomoreparties.sbs]
 
