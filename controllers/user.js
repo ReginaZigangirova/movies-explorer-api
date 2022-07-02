@@ -4,6 +4,7 @@ const User = require('../models/user');
 const InvalidRequest = require('../errors/InvalidRequest');
 const Conflict = require('../errors/Conflict');
 const NotFound = require('../errors/NotFound');
+const { errorMessages } = require('../utils/constants');
 
 const { NODE_ENV, JWT_SECRET } = process.env;
 
@@ -15,8 +16,8 @@ const login = (req, res, next) => {
       const token = jwt.sign({ _id: user._id }, `${NODE_ENV === 'production' ? JWT_SECRET : 'dev-secret'}`, { expiresIn: '7d' });
       res.send({ token });
     })
-    .catch((err) => {
-      next(err);
+    .catch(() => {
+      next(new InvalidRequest(errorMessages.validationErrorMessage));
     });
 };
 
@@ -42,16 +43,18 @@ const createUser = (req, res, next) => {
       }))
     .catch((err) => {
       if (err.name === 'ValidationError') {
-        next(new InvalidRequest('не передан email или пароль'));
+        next(new InvalidRequest(errorMessages.validationErrorMessage));
         return;
       }
       if (err.code === 11000) {
-        next(new Conflict('такой email уже занят'));
+        next(new Conflict(errorMessages.emailConflictErrorMessage));
         return;
       }
       next(err);
-    });
+    })
+    .catch(next);
 };
+
 // возвращает информацию о текущем пользователе
 const getCurrentUser = (req, res, next) => {
   User.findById(req.user._id)
@@ -66,27 +69,25 @@ const getCurrentUser = (req, res, next) => {
 // обновляет профиль
 const updateUser = (req, res, next) => {
   const { name, email } = req.body;
-  User.findByIdAndUpdate(req.user._id, { name, email }, {
-    new: true,
-    runValidators: true,
-    upsert: false,
-  })
+  User.findByIdAndUpdate(req.user._id, { name, email }, { new: true, runValidators: true })
+    .orFail(new NotFound(errorMessages.notFoundUserErrorMessage))
     .then((user) => {
-      if (!user) {
-        next(new NotFound('пользователь не найден'));
-        return;
-      }
       res.send(user);
     })
     .catch((err) => {
-      if (err.name === 'ValidationError') {
-        next(new InvalidRequest('переданы некорректные данные при создании пользователя'));
-        return;
+      if (err.name === 'ValidationError' || err.name === 'CastError') {
+        next(new InvalidRequest(errorMessages.validationErrorMessage));
+      } else if (err.code === 11000) {
+        next(new Conflict(errorMessages.emailConflictErrorMessage));
+      } else {
+        next(err);
       }
-      next(err);
     });
 };
 
 module.exports = {
-  getCurrentUser, updateUser, login, createUser,
+  getCurrentUser,
+  updateUser,
+  login,
+  createUser,
 };

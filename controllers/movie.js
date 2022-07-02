@@ -2,6 +2,7 @@ const Movie = require('../models/movie');
 const ForbiddenError = require('../errors/ForbiddenError');
 const NotFound = require('../errors/NotFound');
 const InvalidRequest = require('../errors/InvalidRequest');
+const { errorMessages } = require('../utils/constants');
 // возвращает все сохранённые текущим  пользователем фильмы
 const getMovies = (req, res, next) => {
   Movie.find({})
@@ -46,33 +47,31 @@ const createMovie = (req, res, next) => {
       res.send(movie);
     })
     .catch((err) => {
-      next(err);
-    });
+      if (err.name === 'ValidationError') {
+        throw new InvalidRequest(errorMessages.validationErrorMessage);
+      }
+      return next(err);
+    })
+    .catch(next);
 };
 
 // удаляет сохранённый фильм по id
 const deleteMovie = (req, res, next) => {
-  Movie.findById(req.params.movieId)
-    .then((movie) => {
-      if (!movie) {
-        throw new NotFound('фильм не найден');
-      }
-      if (req.user._id === movie.owner.toString()) {
-        Movie.findByIdAndRemove(req.params.movieId)
-          .then(() => {
-            res.send(movie);
-          })
-          .catch((err) => {
-            if (err.name === 'CastError') {
-              next(new InvalidRequest('некорректный id'));
-              return;
-            }
-            next(err);
-          });
-        return;
-      }
-      throw new ForbiddenError('невозможно удалить фильм других пользователей');
+  const userId = req.user._id;
+  const { movieId } = req.params;
+
+  Movie.findById(movieId)
+    .orFail(() => {
+      throw new NotFound(errorMessages.movieNotFoundErrorMessage);
     })
-    .catch((err) => next(err));
+    .then((movie) => {
+      if (movie.owner.toString() === userId) {
+        return Movie.findByIdAndRemove(movieId)
+          .then((deletedMovie) => res.send(deletedMovie))
+          .catch(next);
+      }
+      throw new ForbiddenError(errorMessages.forbiddenErrorMessage);
+    })
+    .catch(next);
 };
 module.exports = { getMovies, createMovie, deleteMovie };
